@@ -21,7 +21,7 @@ System packages
 ~~~~~~~~~~~~~~~
 On Debian/Ubuntu::
 
-    $ sudo apt-get install portaudio19-dev python-dev alsa-utils
+    $ sudo apt-get install portaudio19-dev python-dev alsa-utils ffmpeg
 
 On Fedora/RHEL::
 
