@@ -37,6 +37,12 @@ def parse_args():
                         help='verbose mode')
     segment_help = 'audio segment length recorded in seconds (defaults to 0.5)'
     parser.add_argument('--segment', metavar='SECONDS', help=segment_help)
+    valuetype_help = 'select dB or RMS, default RMS'
+    parser.add_argument('--valuetype', type=str, choices=['db', 'rms', 'dB', 'Rms', 'RMS'],
+                        help=valuetype_help)
+    curve_help = 'weighting curve to use, can be A, B, C  or Z'
+    parser.add_argument('-w', '--weightingcurve', type=str, choices=['A', 'B', 'C', 'Z', 'a', 'b', 'c', 'z'],
+                        help=curve_help)
 
     # Extra validation of arguments
     args = parser.parse_args()
@@ -45,6 +51,7 @@ def parse_args():
             msg = ('-c/--collect should not be used with -a/--action '
                    'or -t/--trigger')
             raise parser.error(msg)
+
     if args.segment:
         try:
             segment = float(args.segment)

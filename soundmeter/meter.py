@@ -6,7 +6,10 @@ import pydub
 import wave
 import signal
 import six
+import numpy as np
+from scipy.signal import lfilter
 import subprocess
+import math
 import sys
 import time
 import warnings
@@ -34,7 +37,7 @@ class Meter(object):
 
     def __init__(self, collect=False, seconds=None, action=None,
                  threshold=None, num=None, script=None, log=None,
-                 verbose=False, segment=None, profile=None, *args, **kwargs):
+                 verbose=False, segment=None, profile=None, valuetype="rms", weightingcurve="z", *args, **kwargs):
         """
         :param bool collect: A boolean indicating whether collecting RMS values
         :param float seconds: A float representing number of seconds to run the
@@ -49,6 +52,9 @@ class Meter(object):
         :param bool verbose: A boolean for verbose mode
         :param float segment: A float representing `AUDIO_SEGMENT_LENGTH`
         :param str profile: The config profile
+        :param str values: The type of values to use, RMS or dB. Default is RMS
+        :param str weightingcurve: The weighting curve to use when measuring, default is Z which is plane.
+            Possible values are A, B, C, Z.
         """
 
         global _soundmeter
@@ -74,6 +80,8 @@ class Meter(object):
         self.verbose = verbose
         self.segment = segment
         self.is_running = False
+        self.valuestype = valuetype.lower()
+        self.weightingcurve = weightingcurve.lower()
         self._graceful = False  # Graceful stop switch
         self._timeout = False
         self._timer = None
@@ -112,7 +120,7 @@ class Meter(object):
         if self.verbose:
             self._timer = time.time()
         if self.collect:
-            print('Collecting RMS values...')
+            print('Collecting values...')
         if self.action:
             # Interpret threshold
             self.get_threshold()
@@ -124,14 +132,19 @@ class Meter(object):
                 record.send(True)  # Record stream `AUDIO_SEGMENT_LENGTH' long
                 data = self.output.getvalue()
                 segment = pydub.AudioSegment(data)
-                rms = segment.rms
+                if self.valuestype == "rms":
+                    soundvalue = segment.rms
+                elif self.valuestype == "db":
+                    soundvalue = self.weightedvalue(segment, self.weightingcurve)
+                else:
+                    sys.exit(1)  # Value type must be either db or rms
                 if self.collect:
-                    self.collect_rms(rms)
-                self.meter(rms)
+                    self.collect_rms(soundvalue)
+                self.meter(soundvalue)
                 if self.action:
-                    if self.is_triggered(rms):
-                        self.execute(rms)
-                self.monitor(rms)
+                    if self.is_triggered(soundvalue):
+                        self.execute(soundvalue)
+                self.monitor(soundvalue)
             self.is_running = False
             self.stop()
 
@@ -139,12 +152,44 @@ class Meter(object):
             self.is_running = False
             self.stop()
 
-    def meter(self, rms):
+    def meter(self, value):
         if not self._graceful:
-            sys.stdout.write('\r%10d  ' % rms)
+            sys.stdout.write('\r%10d  %s' % (value, self.valuestype))
             sys.stdout.flush()
             if self.log:
-                self.logging.info(rms)
+                self.logging.info(value)
+
+    def weightedvalue(self, segment, curve):
+        """
+        This function it is used to calculate the average dB level using the weighting curves.
+        The zeros and poles were created by using those functions:
+        http://siggigue.github.io/pyfilterbank/splweighting.html
+        with the sample rate hardcoded to 44100Hz
+        More info about weighting curves:
+        https://www.cirrusresearch.co.uk/blog/2011/08/what-are-a-c-z-frequency-weightings/
+        :param segment: The segment to calculate the weighted average
+        :param curve: The type of curve to apply Z, A, B or C
+        :return: The weighted average
+        """
+        if curve.lower() == "z":
+            return segment.dBFS
+        if curve.lower() == "a":
+            b = np.array([0.25574113, -0.51148225, -0.25574113, 1.0229645, -0.25574113,
+                    -0.51148225, 0.25574113])
+            a = np.array([1.00000000e+00, -4.01957618e+00, 6.18940644e+00,
+                          -4.45319890e+00, 1.42084295e+00, -1.41825474e-01,
+                          4.35117723e-03])
+        if curve.lower() == "b":
+            b = np.array([0.21727294, -0.21727294, -0.43454587, 0.43454587, 0.21727294,
+                          -0.21727294])
+            a = np.array([1., -3.11234468, 3.36634059, -1.40032549, 0.15112883,
+                          -0.00479909])
+        if curve.lower() == "c":
+            b = np.array([0.21700856, 0., -0.43401712, 0., 0.21700856]),
+            a = np.array([1., -2.13467496, 1.27933353, -0.14955985, 0.0049087])
+        y = np.float32(lfilter(b, a, segment.get_array_of_samples()))
+        audio_segment = pydub.AudioSegment(y.tobytes(), frame_rate=44100, sample_width=y.dtype.itemsize, channels=1)
+        return audio_segment.dBFS
 
     def graceful(self):
         """Graceful stop so that the while loop in start() will stop after the
@@ -335,3 +380,6 @@ def sigalrm_handler(signum, frame):
 # Register signal handlers
 signal.signal(signal.SIGINT, sigint_handler)
 signal.signal(signal.SIGALRM, sigalrm_handler)
+
+if __name__ == '__main__':
+    main()
