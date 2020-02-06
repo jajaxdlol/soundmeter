@@ -9,7 +9,7 @@ setup(
     long_description=open('README.rst').read(),
     keywords='soundmeter',
     author='Shichao An',
-    author_email='shichao.an@nyu.edu',
+    author_email='anirudh.srinivas212@gmail.com',
     url='https://github.com/shichao-an/soundmeter',
     license='BSD',
     install_requires=open('requirements.txt').read().splitlines(),
